@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, BookOpen, RefreshCw, Settings } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, BookOpen, RefreshCw, Settings, AlertTriangle, FileJson } from 'lucide-react';
 import JSZip from 'jszip';
 
 interface MangaPage {
@@ -7,12 +7,9 @@ interface MangaPage {
   name: string;
 }
 
-interface GoFileItem {
-  id: string;
+interface MangaListItem {
   name: string;
-  type: string;
-  directLink?: string;
-  link?: string;
+  url: string;
 }
 
 interface MangaReaderProps {
@@ -21,72 +18,52 @@ interface MangaReaderProps {
 }
 
 const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
-  const [folderId, setFolderId] = useState('ZWkuvT');
-  const [items, setItems] = useState<GoFileItem[]>([]);
+  const [items, setItems] = useState<MangaListItem[]>([]);
   const [pages, setPages] = useState<MangaPage[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
-  const [viewMode, setViewMode] = useState<'list' | 'reader' | 'settings'>(mangaId === 'easter_egg' ? 'reader' : 'list');
+  const [viewMode, setViewMode] = useState<'list' | 'reader'>(mangaId === 'easter_egg' ? 'reader' : 'list');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (viewMode === 'list') {
-      fetchFolderContents();
+    if (viewMode === 'list' && mangaId !== 'easter_egg') {
+      fetchMangaList();
     }
-  }, [folderId]);
+  }, [viewMode]);
 
-  const fetchFolderContents = async () => {
+  const fetchMangaList = async () => {
     setLoading(true);
-    setStatus('FETCHING_FOLDER_METADATA...');
+    setStatus('LOADING_MANGA_LIST...');
     setError(null);
     try {
-      // GoFile Public API
-      const response = await fetch(`https://api.gofile.io/contents/getFolder?id=${folderId}`);
+      // Use local static list to bypass GoFile API restrictions
+      const response = await fetch('/old2thousands/manga_list.json');
+      if (!response.ok) throw new Error('FAILED_TO_LOAD_MANGA_LIST_JSON');
       const data = await response.json();
-      
-      if (data.status === 'ok') {
-        const contents = data.data.children;
-        const zipFiles = Object.values(contents)
-          .filter((item: any) => item.type === 'file' && item.name.toLowerCase().endsWith('.zip'))
-          .map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            type: item.type,
-            directLink: item.directLink,
-            link: item.link
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-        
-        setItems(zipFiles);
-      } else {
-        throw new Error(data.status || 'FAILED_TO_LOAD_FOLDER');
-      }
+      setItems(data);
     } catch (err: any) {
       console.error(err);
-      setError(`ERROR: ${err.message || 'NETWORK_ERROR'}`);
+      setError(`LIST_LOAD_ERROR: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadMangaZip = async (item: GoFileItem) => {
+  const loadMangaZip = async (item: MangaListItem) => {
     setLoading(true);
     setStatus(`DOWNLOADING: ${item.name}...`);
     setCurrentPage(0);
+    setError(null);
     
     try {
-      // 1. Fetch the zip file
-      const downloadUrl = item.directLink || item.link;
-      if (!downloadUrl) throw new Error('NO_DIRECT_LINK_AVAILABLE');
-
-      const response = await fetch(downloadUrl);
-      if (!response.ok) throw new Error(`FETCH_FAILED: ${response.status}`);
+      // Direct download from GoFile (Note: CORS might still be an issue on GoFile's end)
+      const response = await fetch(item.url);
+      if (!response.ok) throw new Error(`FETCH_FAILED: ${response.status}. GoFile might require manual download or has CORS restrictions.`);
       
       const arrayBuffer = await response.arrayBuffer();
       setStatus('UNZIPPING_IN_MEMORY...');
 
-      // 2. Unzip using JSZip
       const zip = new JSZip();
       const zipContent = await zip.loadAsync(arrayBuffer);
       
@@ -109,7 +86,6 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
       
       if (imagePages.length === 0) throw new Error('NO_IMAGES_FOUND_IN_ZIP');
 
-      // 3. Sort pages by filename
       imagePages.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
       
       setPages(imagePages);
@@ -126,31 +102,38 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
     <div className="volume-list">
       <div className="list-header">
         <h3 style={{ color: 'var(--accent-color)' }}>
-          <BookOpen size={18} style={{ verticalAlign: 'middle', marginRight: '0.5rem' }} />
-          漫畫清單 [Folder: {folderId}]
+          <FileJson size={18} style={{ verticalAlign: 'middle', marginRight: '0.5rem' }} />
+          漫畫清單 (STATIC_LIST)
         </h3>
         <div className="list-actions">
-          <button onClick={() => setViewMode('settings')} title="Settings"><Settings size={16} /></button>
-          <button onClick={fetchFolderContents} title="Refresh"><RefreshCw size={16} /></button>
+          <button onClick={fetchMangaList} title="Refresh"><RefreshCw size={16} /></button>
         </div>
       </div>
 
-      {error && <div className="error-box retro-border">{error}</div>}
+      {error && (
+        <div className="error-box retro-border">
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <AlertTriangle size={18} />
+            <strong>LOAD_ERROR</strong>
+          </div>
+          <p>{error}</p>
+        </div>
+      )}
 
       <div className="volumes-grid">
         {items.length > 0 ? (
-          items.map(item => (
-            <div key={item.id} className="volume-card retro-border" onClick={() => loadMangaZip(item)}>
+          items.map((item, idx) => (
+            <div key={idx} className="volume-card retro-border" onClick={() => loadMangaZip(item)}>
               <div className="vol-info">
                 <span className="vol-title">{item.name}</span>
                 <span className="download-indicator">
-                  <Download size={14} /> READY
+                  <Download size={14} /> FETCH
                 </span>
               </div>
             </div>
           ))
         ) : (
-          !loading && <p style={{ textAlign: 'center', opacity: 0.5 }}>[ NO_FILES_FOUND ]</p>
+          !loading && !error && <p style={{ textAlign: 'center', opacity: 0.5 }}>[ NO_ITEMS_FOUND ]</p>
         )}
       </div>
     </div>
@@ -168,14 +151,13 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
      |                                           |
      |        /\\____/\\                           |
      |       (  o  o  )   < 沒 有 圖 片 ...      |
-     |       (  =^=  )      只 有 文 字 ！ >     |
+     |       (  =^=  )      只 有 文 文字 ！ >     |
      |        (      )                           |
      |         |_||_|                            |
      |                                           |
      |___________________________________________|
             `}
           </pre>
-          <p className="manga-desc">這是彩蛋模式，只有 ASCII 漫畫。</p>
           <button className="back-to-list" onClick={() => setViewMode('list')}>[ 進入真實閱讀器 ]</button>
         </div>
       );
@@ -189,6 +171,7 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
               src={pages[currentPage].url} 
               alt={`Page ${currentPage + 1}`} 
               className="manga-image"
+              onError={() => setError('IMAGE_RENDER_FAILED')}
             />
           )}
         </div>
@@ -210,36 +193,22 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
             NEXT <ChevronRight size={20} />
           </button>
         </div>
-        <button className="back-to-list" onClick={() => setViewMode('list')}>
+        <button className="back-to-list" onClick={() => {
+          // Cleanup Blob URLs
+          pages.forEach(p => URL.revokeObjectURL(p.url));
+          setViewMode('list');
+        }}>
           [ 返回清單 ]
         </button>
       </div>
     );
   };
 
-  const renderSettings = () => (
-    <div className="settings-panel retro-border">
-      <h3>[ SYSTEM_SETTINGS ]</h3>
-      <div className="setting-item">
-        <label>GOFILE_FOLDER_ID:</label>
-        <input 
-          type="text" 
-          value={folderId} 
-          onChange={(e) => setFolderId(e.target.value)}
-          className="retro-input"
-        />
-      </div>
-      <button className="nav-btn" onClick={() => setViewMode('list')} style={{ marginTop: '1rem' }}>
-        SAVE & CLOSE
-      </button>
-    </div>
-  );
-
   return (
     <div className="manga-overlay">
       <div className="retro-border manga-window">
         <div className="manga-header">
-          <span>[ RETRO_MANGA_SYSTEM v1.0 ]</span>
+          <span>[ RETRO_MANGA_SYSTEM v1.2 ]</span>
           <button onClick={onClose} className="close-btn"><X size={20} /></button>
         </div>
         
@@ -252,7 +221,6 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
           <>
             {viewMode === 'list' && renderList()}
             {viewMode === 'reader' && renderReader()}
-            {viewMode === 'settings' && renderSettings()}
           </>
         )}
       </div>
@@ -279,7 +247,7 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
           min-height: 500px;
           display: flex;
           flex-direction: column;
-          padding: 1rem;
+          padding: 1.5rem;
           overflow: hidden;
         }
         .manga-header {
@@ -304,23 +272,22 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
           align-items: center;
           margin-bottom: 1.5rem;
         }
-        .list-actions {
-          display: flex;
-          gap: 0.5rem;
-        }
         .list-actions button {
           background: none;
           border: 1px solid var(--border-color);
           color: var(--text-color);
           cursor: pointer;
-          padding: 0.2rem;
+          padding: 0.3rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .volumes-grid {
           display: grid;
           gap: 0.8rem;
           overflow-y: auto;
-          max-height: 60vh;
-          padding-right: 5px;
+          max-height: 55vh;
+          padding-right: 8px;
         }
         .volume-card {
           cursor: pointer;
@@ -339,9 +306,6 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
         }
         .vol-title {
           font-size: 0.9rem;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
         }
         .download-indicator {
           font-size: 0.6rem;
@@ -405,12 +369,13 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
           background: none;
           border: 1px solid var(--border-color);
           color: var(--text-color);
-          padding: 0.4rem 1rem;
+          padding: 0.5rem 1.2rem;
           cursor: pointer;
           display: flex;
           align-items: center;
           gap: 0.5rem;
           font-family: var(--font-family);
+          font-size: 0.8rem;
         }
         .nav-btn:hover:not(:disabled) {
           background: var(--text-color);
@@ -418,6 +383,7 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
         }
         .nav-btn:disabled {
           opacity: 0.3;
+          cursor: not-allowed;
         }
         .back-to-list {
           align-self: center;
@@ -432,32 +398,18 @@ const MangaReader: React.FC<MangaReaderProps> = ({ mangaId, onClose }) => {
         .error-box {
           color: #ff3333;
           border-color: #ff3333;
-          padding: 0.5rem;
-          margin-bottom: 1rem;
-          font-size: 0.8rem;
-        }
-        .settings-panel {
-          padding: 1.5rem;
-        }
-        .setting-item {
-          margin-top: 1rem;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-        .retro-input {
-          background: #000;
-          border: 1px solid var(--border-color);
-          color: var(--text-color);
-          padding: 0.5rem;
-          font-family: var(--font-family);
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+          font-size: 0.85rem;
+          background: rgba(255, 0, 0, 0.05);
         }
         .ascii-art {
           font-family: monospace;
           white-space: pre;
           color: var(--text-color);
-          font-size: 12px;
-          margin: 2rem 0;
+          font-size: 11px;
+          margin: 1rem 0;
+          text-align: center;
         }
       `}</style>
     </div>
