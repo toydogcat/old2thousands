@@ -21,17 +21,13 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: old2thousands/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: |
-          cd old2thousands
-          npm ci
+        run: npm ci
 
       - name: Build
-        run: |
-          cd old2thousands
-          npm run build
+        run: npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -39,7 +35,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: old2thousands/dist
+          path: dist
 
       - name: Deploy to GitHub Pages
         id: deployment
