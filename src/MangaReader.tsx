@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, BookOpen, RefreshCw, Settings, AlertTriangle, FileJson } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, RefreshCw, AlertTriangle, FileJson } from 'lucide-react';
 import JSZip from 'jszip';
 
 interface MangaPage {
