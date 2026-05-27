@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as LucideIcons from 'lucide-react';
-import { DECADES, DecadeItem } from './data';
+import { DECADES } from './data';
+import type { DecadeItem } from './data';
 import MangaReader from './MangaReader';
 
 const App: React.FC = () => {
