@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import * as LucideIcons from 'lucide-react';
-import { DECADES } from './data';
+import { DECADES, DecadeItem } from './data';
+import MangaReader from './MangaReader';
 
 const App: React.FC = () => {
   const [activeDecade, setActiveDecade] = useState<string>(DECADES[0].id);
+  const [showManga, setShowManga] = useState(false);
+  const [mangaId, setMangaId] = useState<string | null>(null);
 
   // postMessage for Luna AI Hub
   useEffect(() => {
@@ -38,12 +41,27 @@ const App: React.FC = () => {
 
   const currentDecade = DECADES.find(d => d.id === activeDecade) || DECADES[0];
 
+  const handleAction = (actionId: string) => {
+    if (actionId.startsWith('manga_')) {
+      setMangaId(actionId);
+      setShowManga(true);
+    }
+  };
+
   return (
     <div className="container">
+      {showManga && <MangaReader mangaId={mangaId} onClose={() => setShowManga(false)} />}
+      
       <header className="header">
         <div className="retro-border">
           <h1 className="glitch">🕰️ NOSTALGIA ARCHIVE</h1>
           <p>-- Back to the Golden Ages --</p>
+          <button 
+            className="easter-egg-trigger"
+            onClick={() => { setMangaId('easter_egg'); setShowManga(true); }}
+          >
+            [ READ_MANGA_MODE ]
+          </button>
         </div>
       </header>
 
@@ -72,9 +90,25 @@ const App: React.FC = () => {
                   <Icon size={20} /> {cat.name}
                 </h3>
                 <ul className="item-list">
-                  {cat.items.map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
+                  {cat.items.map((item, i) => {
+                    const isObject = typeof item === 'object';
+                    const text = isObject ? (item as DecadeItem).text : item as string;
+                    const hasAction = isObject && (item as DecadeItem).hasAction;
+
+                    return (
+                      <li key={i} className="item-with-action">
+                        <span>{text}</span>
+                        {hasAction && (
+                          <button 
+                            className="item-action-btn"
+                            onClick={() => handleAction((item as DecadeItem).actionId || '')}
+                          >
+                            {(item as DecadeItem).actionLabel || '[ ACTION ]'}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             );
@@ -94,6 +128,46 @@ const App: React.FC = () => {
           </p>
         </div>
       </footer>
+
+      <style>{`
+        .easter-egg-trigger {
+          background: none;
+          border: 1px dashed var(--border-color);
+          color: var(--accent-color);
+          font-family: var(--font-family);
+          padding: 0.2rem 0.5rem;
+          margin-top: 1rem;
+          cursor: pointer;
+          font-size: 0.7rem;
+          transition: all 0.3s;
+        }
+        .easter-egg-trigger:hover {
+          background: var(--accent-color);
+          color: var(--bg-color);
+          border-style: solid;
+        }
+        .item-with-action {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .item-action-btn {
+          background: none;
+          border: 1px solid var(--text-color);
+          color: var(--text-color);
+          font-family: var(--font-family);
+          font-size: 0.7rem;
+          padding: 0.1rem 0.4rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .item-action-btn:hover {
+          background: var(--text-color);
+          color: var(--bg-color);
+        }
+      `}</style>
     </div>
   );
 };
